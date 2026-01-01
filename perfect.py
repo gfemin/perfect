@@ -11,7 +11,6 @@ BOT_TOKEN = '8023746280:AAHPKiTBsQ96nTwEfuetXuwuITLzHJTaJ38'
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # User Data Storage
-# Structure: { chat_id: { 'mode': 'idle', 'files': [], 'old': set(), 'new': set() } }
 user_data = {}
 
 # CC Regex Function
@@ -23,6 +22,11 @@ def extract_cards(text):
         clean_card = re.sub(r'[ \:\/\-]', '|', card)
         cleaned.add(clean_card)
     return list(cleaned)
+
+# Helper: Ensure User Data Exists (🔥 ဒီကောင်က Error ကာကွယ်ပေးမယ်)
+def ensure_user_data(chat_id):
+    if chat_id not in user_data:
+        user_data[chat_id] = {'mode': 'idle', 'files': [], 'old': set(), 'new': set()}
 
 # ==========================================
 # 🏠 MAIN MENU
@@ -54,6 +58,8 @@ def send_welcome(message):
 @bot.message_handler(func=lambda m: m.text == "🧹 Cleaner & Combiner")
 def mode_cleaner(message):
     chat_id = message.chat.id
+    ensure_user_data(chat_id) # 🔥 Data မရှိရင် အသစ်ဆောက်မယ်
+    
     user_data[chat_id]['mode'] = 'cleaner'
     user_data[chat_id]['files'] = []
     
@@ -75,6 +81,8 @@ def mode_cleaner(message):
 @bot.message_handler(func=lambda m: m.text == "🔍 Smart Filter (Old vs New)")
 def mode_filter_start(message):
     chat_id = message.chat.id
+    ensure_user_data(chat_id) # 🔥 Data မရှိရင် အသစ်ဆောက်မယ် (KeyError မတက်တော့ဘူး)
+
     user_data[chat_id]['mode'] = 'filter_old' # Step 1
     user_data[chat_id]['old'] = set()
     user_data[chat_id]['new'] = set()
@@ -96,7 +104,10 @@ def mode_filter_start(message):
 @bot.message_handler(func=lambda m: m.text == "➡️ Next Step (Send New)")
 def mode_filter_step2(message):
     chat_id = message.chat.id
-    if user_data.get(chat_id, {}).get('mode') != 'filter_old':
+    ensure_user_data(chat_id)
+    
+    if user_data[chat_id]['mode'] != 'filter_old':
+        bot.reply_to(message, "⚠️ Please start from the beginning.")
         return
         
     user_data[chat_id]['mode'] = 'filter_new' # Step 2
@@ -123,7 +134,10 @@ def mode_filter_step2(message):
 @bot.message_handler(func=lambda m: m.text == "✅ Done Combining")
 def process_cleaner(message):
     chat_id = message.chat.id
-    if user_data.get(chat_id, {}).get('mode') != 'cleaner':
+    ensure_user_data(chat_id)
+
+    if user_data[chat_id]['mode'] != 'cleaner':
+        bot.reply_to(message, "⚠️ Mode Error. Please restart.")
         return
 
     all_cards = user_data[chat_id]['files']
@@ -134,15 +148,18 @@ def process_cleaner(message):
     unique_cards = list(set(all_cards))
     removed = len(all_cards) - len(unique_cards)
     
-    send_file_result(message, unique_cards, "Combined_Cleaned.txt", 
-                     f"🧹 **Cleaning Done!**\n💎 Unique: {len(unique_cards)}\n🗑️ Dupes Removed: {removed}")
+    caption = f"🧹 **Cleaning Done!**\n💎 Unique: {len(unique_cards)}\n🗑️ Dupes Removed: {removed}"
+    send_file_result(message, unique_cards, "Combined_Cleaned.txt", caption)
     send_welcome(message)
 
 # 2. Filter Processing
 @bot.message_handler(func=lambda m: m.text == "✅ Finish & Filter")
 def process_filter(message):
     chat_id = message.chat.id
-    if user_data.get(chat_id, {}).get('mode') != 'filter_new':
+    ensure_user_data(chat_id)
+
+    if user_data[chat_id]['mode'] != 'filter_new':
+        bot.reply_to(message, "⚠️ Mode Error. Please restart.")
         return
 
     old_set = user_data[chat_id]['old']
@@ -170,9 +187,13 @@ def process_filter(message):
 
 # Helper to send file
 def send_file_result(message, data_list, filename, caption):
+    if not data_list:
+        return
+        
     with open(filename, "w") as f:
         for item in data_list:
             f.write(item + "\n")
+            
     with open(filename, "rb") as f:
         bot.send_document(message.chat.id, f, caption=caption)
     os.remove(filename)
@@ -188,7 +209,10 @@ def handle_inputs(message):
         send_welcome(message)
         return
         
-    if chat_id not in user_data or user_data[chat_id]['mode'] == 'idle':
+    # 🔥 Data မရှိရင် အသစ်ဆောက်မယ် (Crash မဖြစ်အောင်)
+    ensure_user_data(chat_id)
+
+    if user_data[chat_id]['mode'] == 'idle':
         if message.text != "/start":
             send_welcome(message)
         return
@@ -205,6 +229,7 @@ def handle_inputs(message):
             downloaded = bot.download_file(file_info.file_path)
             content = downloaded.decode('utf-8', errors='ignore')
         except:
+            bot.reply_to(message, "⚠️ File Error.")
             return
 
     extracted = extract_cards(content)
