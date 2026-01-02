@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import re
 import os
+import time
 
 # ==========================================
 # 👇 Bot Token ထည့်ပါ
@@ -250,5 +251,15 @@ def handle_inputs(message):
         user_data[chat_id]['new'].update(extracted)
         bot.reply_to(message, f"📥 New Added! (Total New: {len(user_data[chat_id]['new'])})")
 
+# ==========================================
+# 🔥 SAFE POLLING (AUTO RESTART ON CRASH)
+# ==========================================
 print("🤖 Super Bot is Running...")
-bot.polling(non_stop=True)
+
+# 🔥 ဒီ Loop က Connection ပြတ်ရင် ပြန်ချိတ်ပေးလိမ့်မယ်
+while True:
+    try:
+        bot.polling(non_stop=True, timeout=60, long_polling_timeout=60)
+    except Exception as e:
+        print(f"⚠️ Connection Error: {e}")
+        time.sleep(5) # 5 စက္ကန့်နားပြီး ပြန်ချိတ်မယ်
